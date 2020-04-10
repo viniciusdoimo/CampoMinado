@@ -2,16 +2,17 @@ package br.com.viniciusdoimo.campominado.model;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-import br.com.viniciusdoimo.campominado.exception.ExplosionException;
-
-public class Board {
-	private int line;
-	private int column;
-	private int bomb;
+public class Board implements FieldObserver{
+	private final int line;
+	private final int column;
+	private final int bomb;
 	
 	private final List<Field> field = new ArrayList<>();
+	private final List<Consumer<EventResult>> observers = 
+			new ArrayList<>();
 	
 	public Board(int line, int column, int bomb) {
 		this.line = line;
@@ -26,38 +27,26 @@ public class Board {
 	public int getLine() {
 		return line;
 	}
-	
-	public void setLine(int line) {
-		this.line = line;
-	}
 
 	public int getColumn() {
 		return column;
 	}
 
-	public void setColumn(int column) {
-		this.column = column;
-	}
-
 	public int getBomb() {
 		return bomb;
 	}
-
-	public void setBomb(int bomb) {
-		this.bomb = bomb;
-	}
-
+	
 	public List<Field> getField() {
 		return field;
 	}
 	
 	public void open(int line,int column) {
 		try {
-			field.parallelStream()
+			field.parallelStream() 
 			.filter(f -> f.getLine() == line && f.getColumn() == column)
 			.findFirst()
 			.ifPresent(f -> f.openField());
-		} catch (ExplosionException e) {
+		} catch (Exception e) {
 			field.forEach(f -> f.setOpen(Boolean.TRUE));
 			throw e;
 		}
@@ -70,10 +59,42 @@ public class Board {
 			.ifPresent(f -> f.changeChecked());
 	}
 	
+	public void registerObservers(Consumer<EventResult> observer) {
+		observers.add(observer);
+	}
+	
+	public void notifyObservers(boolean result) {
+		observers.stream()
+		.forEach(o -> o.accept(new EventResult(result)));
+	}
+	
+	public boolean goalAchieved() {
+		return field.stream().allMatch(f -> f.goalAchieved());
+	}
+	
+	public void restart() {
+		field.stream().forEach(f -> f.restart());
+		randomlyDistributeBombs();
+	}
+	
+	public void forEach(Consumer<Field> function) {
+		field.forEach(function);
+		
+	}
+	
+	private void showBombs() {
+		field.stream()
+		.filter(f -> f.isUndermined())
+		.filter(f -> !f.isMarked())
+		.forEach(f -> f.setOpen(Boolean.TRUE));
+	}
+	
 	private void generateField() {
 		for(int l = 0; l < line; l++) {
 			for(int c = 0; c < column; c++) {
-				field.add(new Field(l,c));
+				Field field = new Field(l, c);
+				field.registerObservers(this);
+				this.field.add(field);
 			}
 		}
 	}
@@ -97,39 +118,13 @@ public class Board {
 		} while(armedBomb < bomb);
 	}
 	
-	public boolean goalAchieved() {
-		return field.stream().allMatch(f -> f.goalAchieved());
-	}
-	
-	public void restar() {
-		field.stream().forEach(f -> f.restart());
-		randomlyDistributeBombs();
-	}
-	
 	@Override
-	public String toString() {
-		StringBuilder stringBoard = new StringBuilder();
-		int i = 0;
-		
-		stringBoard.append("  ");
-		for (int f = 0; f < column; f++) {
-			stringBoard.append(" ");
-			stringBoard.append(f);
-			stringBoard.append(" ");
+	public void occurredEvent(Field field, EventField event) {
+		if(event == EventField.EXPLODE) {
+			showBombs();
+			notifyObservers(Boolean.FALSE);
+		}else if(goalAchieved()) {
+			notifyObservers(Boolean.TRUE);
 		}
-		stringBoard.append("\n");
-		
-		for (int l = 0; l < line; l++) {
-			stringBoard.append(l);
-			stringBoard.append(" ");
-			for (int c = 0; c < column; c++) {
-				stringBoard.append(" ");
-				stringBoard.append(field.get(i));
-				stringBoard.append(" ");
-				i++;
-			}
-			stringBoard.append("\n");
-		}
-		return stringBoard.toString();
 	}
 }

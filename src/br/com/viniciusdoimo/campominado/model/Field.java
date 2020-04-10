@@ -3,8 +3,6 @@ package br.com.viniciusdoimo.campominado.model;
 import java.util.ArrayList;
 import java.util.List;
 
-import br.com.viniciusdoimo.campominado.exception.ExplosionException;
-
 public class Field {
 	private final int line;
 	private final int column;
@@ -14,10 +12,19 @@ public class Field {
 	private boolean marked = false;
 
 	private List<Field> neighbors = new ArrayList<>();
-
+	private List<FieldObserver> observers = new ArrayList<>();
+		
 	public Field(int line, int column) {
 		this.line = line;
 		this.column = column;
+	}
+	
+	public int getLine() {
+		return line;
+	}
+	
+	public int getColumn() {
+		return column;
 	}
 
 	public boolean isOpen() {
@@ -26,6 +33,10 @@ public class Field {
 
 	public void setOpen(boolean open) {
 		this.open = open;
+		
+		if(open) {
+			notifyobservers(EventField.OPEN);
+		}
 	}
 
 	public boolean isUndermined() {
@@ -51,13 +62,14 @@ public class Field {
 	public void setNeighbors(List<Field> neighbors) {
 		this.neighbors = neighbors;
 	}
-
-	public int getLine() {
-		return line;
+	
+	public void registerObservers(FieldObserver observer) {
+		observers.add(observer);
 	}
-
-	public int getColumn() {
-		return column;
+	
+	private void notifyobservers(EventField event) {
+		observers.stream()
+		.forEach(o -> o.occurredEvent(this, event));
 	}
 
 	public boolean addNeighbor(Field neighbor) {
@@ -78,6 +90,12 @@ public class Field {
 	public void changeChecked() {
 		if (!open) {
 			marked = !marked;
+			
+			if(marked) {
+				notifyobservers(EventField.MARK);
+			}else {
+				notifyobservers(EventField.MARK_OFF);
+			}
 		}
 	}
 
@@ -88,14 +106,25 @@ public class Field {
 		}
 		return Boolean.FALSE;
 	}
+	
+	public int bombsInNeighborhood() {
+		return (int) neighbors.stream().filter(n -> n.undermined).count();
+	}
 
+	public boolean neighborhoodSecurity() {
+		return neighbors.stream().noneMatch(neighbor -> neighbor.undermined);
+	}
+	
 	public boolean openField() {
 		if (!open && !marked) {
-			open = Boolean.TRUE;
-
 			if (undermined) {
-				throw new ExplosionException();
+				notifyobservers(EventField.EXPLODE);
+				return Boolean.TRUE;
 			}
+			
+			setOpen(Boolean.TRUE);
+			notifyobservers(EventField.OPEN);
+			
 
 			if (neighborhoodSecurity()) {
 				neighbors.forEach(neighbor -> neighbor.openField());
@@ -106,20 +135,6 @@ public class Field {
 		}
 	}
 
-	@Override
-	public String toString() {
-		if (marked) {
-			return "x";
-		} else if (open && undermined) {
-			return "*";
-		} else if (open && bombsInNeighborhood() > 0) {
-			return Long.toString(bombsInNeighborhood());
-		} else if (open) {
-			return " ";
-		}
-		return "?";
-	}
-
 	boolean goalAchieved() {
 		boolean fildUnveiled = !undermined && open;
 		boolean fieldProtected = undermined && marked;
@@ -127,18 +142,12 @@ public class Field {
 		return fildUnveiled || fieldProtected;
 	}
 
-	Long bombsInNeighborhood() {
-		return neighbors.stream().filter(n -> n.undermined).count();
-	}
-
 	void restart() {
 		open = Boolean.FALSE;
 		undermined = Boolean.FALSE;
 		marked = Boolean.FALSE;
-	}
-
-	private boolean neighborhoodSecurity() {
-		return neighbors.stream().noneMatch(neighbor -> neighbor.undermined);
+		
+		notifyobservers(EventField.RESTART);
 	}
 
 	private boolean isDiagonal(int line, int column, Field neighbor) {
@@ -159,3 +168,5 @@ public class Field {
 		return deltaLine + deltaColumn;
 	}
 }
+
+	
